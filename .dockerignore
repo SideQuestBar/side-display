@@ -1,0 +1,12 @@
+.git
+.github
+.claude
+.agents
+node_modules
+dist
+/data
+docs
+test
+sidedisplay
+*.md
+.env*

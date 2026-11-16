@@ -1,0 +1,24 @@
+# SideDisplay with Docker Compose:
+#
+#   docker compose up -d
+#
+# then open http://localhost:4380 and choose a password.
+services:
+  sidedisplay:
+    image: ghcr.io/sidequestbar/side-display:latest
+    # To build from this checkout instead of pulling the image:
+    # build: .
+    restart: unless-stopped
+    ports:
+      - "4380:4380"
+    volumes:
+      - sidedisplay-data:/data
+    environment:
+      # All optional; see .env.example for the full list.
+      # SIDEDISPLAY_PASSWORD: change-me
+      # SIDEDISPLAY_HA_URL: http://homeassistant.local:8123
+      # SIDEDISPLAY_HA_TOKEN: a-long-lived-access-token
+      TZ: Europe/Budapest
+
+volumes:
+  sidedisplay-data:

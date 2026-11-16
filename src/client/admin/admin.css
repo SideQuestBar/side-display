@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/*
+ * Admin UI theme. Colours are CSS variables so the same utility classes work
+ * in light and dark (following the system setting).
+ */
+:root {
+	--bg: #f3f4f6;
+	--surface: #ffffff;
+	--raised: #f8f9fb;
+	--line: #dfe3e8;
+	--ink: #17202a;
+	--muted: #66727f;
+	--accent: #b97a00;
+	--accent-bg: #ffd24a;
+	--accent-ink: #2a2000;
+	--danger: #c93a3a;
+	--ok: #1f9d55;
+	color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #10171d;
+		--surface: #19232c;
+		--raised: #212d38;
+		--line: #2e3c49;
+		--ink: #e8edf2;
+		--muted: #93a1af;
+		--accent: #ffd24a;
+		--accent-bg: #ffd24a;
+		--accent-ink: #2a2000;
+		--danger: #f07474;
+		--ok: #4cc38a;
+		color-scheme: dark;
+	}
+}
+@theme {
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-raised: var(--raised);
+	--color-line: var(--line);
+	--color-ink: var(--ink);
+	--color-muted: var(--muted);
+	--color-accent: var(--accent);
+	--color-accent-bg: var(--accent-bg);
+	--color-accent-ink: var(--accent-ink);
+	--color-danger: var(--danger);
+	--color-ok: var(--ok);
+}
+
+html,
+body,
+#root {
+	height: 100%;
+}
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--ink);
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	font-size: 14px;
+}
+
+@layer components {
+	.btn {
+		@apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition-colors select-none hover:bg-raised disabled:cursor-not-allowed disabled:opacity-50;
+	}
+	.btn svg {
+		@apply size-4 shrink-0;
+	}
+	.btn-primary {
+		@apply border-transparent bg-accent-bg text-accent-ink hover:bg-accent-bg hover:brightness-95;
+	}
+	.btn-danger {
+		@apply text-danger;
+	}
+	.btn-ghost {
+		@apply border-transparent bg-transparent hover:bg-raised;
+	}
+	.btn-icon {
+		@apply px-1.5;
+	}
+	.input {
+		@apply w-full min-w-0 rounded-lg border border-line bg-raised px-2.5 py-1.5 text-sm text-ink outline-none placeholder:text-muted/70 focus:border-accent;
+	}
+	textarea.input {
+		@apply min-h-20 resize-y font-[inherit] leading-snug;
+	}
+	.label {
+		@apply mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-muted;
+	}
+	.help {
+		@apply mt-1 text-xs leading-snug text-muted;
+	}
+	.card {
+		@apply rounded-xl border border-line bg-surface;
+	}
+	.badge {
+		@apply inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-xs font-medium text-muted;
+	}
+	.section-title {
+		@apply text-xs font-bold tracking-wider text-muted uppercase;
+	}
+}
+
+/* A layout preview in a fixed-ratio frame. */
+.preview-frame {
+	position: relative;
+	overflow: hidden;
+	background: #000;
+}
+.preview-frame .sd-viewport {
+	/* Clicks in thumbnails go to the card, not the layout. */
+	pointer-events: none;
+}
+.preview-frame[data-editing] .sd-viewport {
+	pointer-events: auto;
+}
+.free-handle {
+	position: absolute;
+	width: 28px;
+	height: 28px;
+	margin: -14px 0 0 -14px;
+	border-radius: 50%;
+	background: #4f8cff;
+	border: 4px solid #fff;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+	cursor: nwse-resize;
+	z-index: 5;
+	touch-action: none;
+}
+input[type="range"] {
+	accent-color: var(--accent);
+}
+input[type="color"] {
+	padding: 0;
+	border: 0;
+	background: none;
+}

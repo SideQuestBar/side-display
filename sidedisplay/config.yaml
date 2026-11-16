@@ -1,0 +1,35 @@
+# Home Assistant app definition. The image is built and published by
+# .github/workflows/release.yml; `version` must match a published tag.
+name: SideDisplay
+version: "1.0.0"
+slug: sidedisplay
+description: Manage read-only information displays, from TVs and tablets to ePaper frames
+url: https://github.com/SideQuestBar/side-display
+image: ghcr.io/sidequestbar/side-display
+arch:
+  - aarch64
+  - amd64
+init: false
+
+# The admin interface, inside Home Assistant (no separate sign-in).
+ingress: true
+ingress_port: 4380
+ingress_stream: true
+panel_icon: mdi:monitor-dashboard
+panel_title: SideDisplay
+
+# Screens cannot sign in to Home Assistant, so displays are opened on this port.
+ports:
+  4380/tcp: 4380
+ports_description:
+  4380/tcp: Displays (and the admin interface, with a password)
+
+# Lets SideDisplay read entities, calendars and cameras without a token.
+homeassistant_api: true
+
+# Offers the MQTT elements the broker set up in Home Assistant, if there is one.
+services:
+  - mqtt:want
+
+watchdog: http://[HOST]:[PORT:4380]/api/health
+backup: hot

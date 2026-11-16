@@ -1,0 +1,5 @@
+# Makes this repository installable in Home Assistant:
+# Settings → Apps → App store → ⋮ → Repositories → add this repository's URL.
+name: SideDisplay
+url: https://github.com/SideQuestBar/side-display
+maintainer: Rafael Keramidas
