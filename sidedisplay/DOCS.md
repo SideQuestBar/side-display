@@ -34,6 +34,16 @@ it without any setup. Another broker can be entered under **Settings → MQTT**.
 `http://<your Home Assistant address>:4380` also serves the admin interface. It
 stays closed until you choose a password under **Settings** (from the sidebar).
 
+## Who can manage SideDisplay
+
+Every Home Assistant user sees **SideDisplay** in the sidebar, but only
+administrators are let in at first. To let everyone manage layouts, displays
+and media, open **Settings → Home Assistant users** and choose **All Home
+Assistant users**. Only administrators can change that setting and the
+password.
+
+Telling administrators apart needs Supervisor 2026.10.4 or newer.
+
 ## Data and backups
 
 Layouts, displays and uploaded media live in the app's data folder and are part

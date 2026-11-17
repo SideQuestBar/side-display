@@ -299,6 +299,9 @@ export interface HaSettings {
 	token: string;
 }
 
+/** Which Home Assistant users may open the admin interface from the sidebar. */
+export type HaAccess = "admins" | "everyone";
+
 export interface HaStatus {
 	/** Where the connection settings come from. */
 	source: "supervisor" | "settings" | "env" | "none";

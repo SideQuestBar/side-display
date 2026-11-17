@@ -33,6 +33,17 @@ Without one, that address only says so.
 Uploads through the sidebar pass through Home Assistant's proxy, which limits
 their size. For large videos, sign in on port 4380 and upload there.
 
+### Who can manage it
+
+The sidebar entry is shown to every Home Assistant user, but only
+administrators are let in at first; everyone else gets a notice. Under
+**Settings → Home Assistant users**, an administrator can open SideDisplay to
+all users. They can then manage layouts, displays, media and the other
+settings, but not that setting or the password.
+
+SideDisplay learns who is an administrator from Supervisor (2026.10.4 or
+newer). With an older one, nobody is let in from the sidebar.
+
 ## Connecting from elsewhere (Docker, Coolify…)
 
 1. In Home Assistant, open your profile, then **Security → Long-lived access

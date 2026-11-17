@@ -1,6 +1,6 @@
 import { createEffect, createSignal, on, Show } from "solid-js";
 import { createStore } from "solid-js/store";
-import { DEFAULT_GENERAL_SETTINGS, type GeneralSettings } from "../../shared/types";
+import { DEFAULT_GENERAL_SETTINGS, type GeneralSettings, type HaAccess } from "../../shared/types";
 import { api } from "../lib/api";
 import { refetchEntities, refetchSettings, settings } from "./state";
 import { attempt, FormField, PageHeader, toast } from "./ui";
@@ -12,7 +12,15 @@ const SOURCES = {
 	none: "",
 };
 
-export function SettingsPage(props: { version: string; ingress: boolean }) {
+export function SettingsPage(props: {
+	version: string;
+	/** Signed in by Home Assistant rather than with the password. */
+	ingress: boolean;
+	/** Running as a Home Assistant app. */
+	app: boolean;
+	/** May change the password and which Home Assistant users get in. */
+	owner: boolean;
+}) {
 	const [general, setGeneral] = createStore<GeneralSettings>({ ...DEFAULT_GENERAL_SETTINGS });
 	const [haUrl, setHaUrl] = createSignal("");
 	const [haToken, setHaToken] = createSignal("");
@@ -84,6 +92,15 @@ export function SettingsPage(props: { version: string; ingress: boolean }) {
 		setMqttTest(
 			(await attempt(() => api<{ ok: boolean; message: string }>("api/mqtt/test", { body: mqttBody() }))) ?? null,
 		);
+	const saveAccess = async (access: HaAccess) => {
+		await attempt(
+			() => api("api/settings/access", { method: "PUT", body: { access } }),
+			access === "everyone"
+				? "Every Home Assistant user can now manage SideDisplay."
+				: "Only Home Assistant administrators can manage SideDisplay now.",
+		);
+		void refetchSettings();
+	};
 	const changePassword = async () => {
 		const done = await attempt(
 			() => api("api/auth/password", { body: { current: current(), next: next() } }),
@@ -360,37 +377,64 @@ export function SettingsPage(props: { version: string; ingress: boolean }) {
 				</div>
 			</section>
 
-			<section class="card space-y-4 p-5">
-				<div>
-					<h2 class="text-base font-semibold">Password</h2>
-					<p class="help">One password protects this admin interface. Displays do not need it.</p>
-				</div>
-				<div class="grid gap-3 sm:grid-cols-2">
-					<Show when={!props.ingress}>
-						<FormField label="Current password">
+			<Show when={props.app && props.owner}>
+				<section class="card space-y-4 p-5">
+					<div>
+						<h2 class="text-base font-semibold">Home Assistant users</h2>
+						<p class="help">
+							Who can manage SideDisplay from the Home Assistant sidebar. Users who are not administrators cannot change
+							this setting or the password.
+						</p>
+					</div>
+					<FormField
+						label="Open to"
+						help="The sidebar entry is shown to everyone; users who are not let in only see a notice."
+					>
+						<select
+							class="input"
+							value={settings()?.access ?? "admins"}
+							onChange={(e) => void saveAccess(e.currentTarget.value as HaAccess)}
+						>
+							<option value="admins">Administrators only</option>
+							<option value="everyone">All Home Assistant users</option>
+						</select>
+					</FormField>
+				</section>
+			</Show>
+
+			<Show when={props.owner}>
+				<section class="card space-y-4 p-5">
+					<div>
+						<h2 class="text-base font-semibold">Password</h2>
+						<p class="help">One password protects this admin interface. Displays do not need it.</p>
+					</div>
+					<div class="grid gap-3 sm:grid-cols-2">
+						<Show when={!props.ingress}>
+							<FormField label="Current password">
+								<input
+									class="input"
+									type="password"
+									autocomplete="current-password"
+									value={current()}
+									onInput={(e) => setCurrent(e.currentTarget.value)}
+								/>
+							</FormField>
+						</Show>
+						<FormField label="New password" help="At least 8 characters.">
 							<input
 								class="input"
 								type="password"
-								autocomplete="current-password"
-								value={current()}
-								onInput={(e) => setCurrent(e.currentTarget.value)}
+								autocomplete="new-password"
+								value={next()}
+								onInput={(e) => setNext(e.currentTarget.value)}
 							/>
 						</FormField>
-					</Show>
-					<FormField label="New password" help="At least 8 characters.">
-						<input
-							class="input"
-							type="password"
-							autocomplete="new-password"
-							value={next()}
-							onInput={(e) => setNext(e.currentTarget.value)}
-						/>
-					</FormField>
-				</div>
-				<button type="button" class="btn btn-primary" disabled={next().length < 8} onClick={changePassword}>
-					Change password
-				</button>
-			</section>
+					</div>
+					<button type="button" class="btn btn-primary" disabled={next().length < 8} onClick={changePassword}>
+						Change password
+					</button>
+				</section>
+			</Show>
 
 			<p class="text-xs text-muted">
 				SideDisplay {props.version} · free software under the GNU GPL v3 · map data © OpenStreetMap contributors, tiles

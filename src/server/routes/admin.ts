@@ -5,6 +5,7 @@
 import { Elysia, t } from "elysia";
 import { cloneElement, convertLegacyLayout, isLegacyLayout, normalizeElements } from "../../shared/layout";
 import { DEFAULT_GENERAL_SETTINGS, type GeneralSettings, type SetupInfo } from "../../shared/types";
+import { isOwner } from "../auth";
 import { elementPicture, resolveElement } from "../data";
 import { cameraStream } from "../data/home";
 import { notify } from "../events";
@@ -178,6 +179,7 @@ const settingsRoutes = new Elysia()
 		const mqtt = getSetting("mqtt");
 		return {
 			general: getSetting("general"),
+			access: getSetting("auth.haAccess"),
 			// The token and the password themselves are never sent back, only whether one is stored.
 			ha: { url: ha.url, hasToken: Boolean(ha.token), status: haStatus() },
 			mqtt: {
@@ -188,6 +190,16 @@ const settingsRoutes = new Elysia()
 			},
 		};
 	})
+	.put(
+		"/settings/access",
+		{ body: t.Object({ access: t.Union([t.Literal("admins"), t.Literal("everyone")]) }) },
+		({ body, request, server, status }) => {
+			if (!isOwner(request, server?.requestIP(request)?.address))
+				return status(403, { error: "Only a Home Assistant administrator can change who gets in." });
+			setSetting("auth.haAccess", body.access);
+			return { access: body.access };
+		},
+	)
 	.put("/settings/general", { body: generalBody }, ({ body, status }) => {
 		const general: GeneralSettings = { ...DEFAULT_GENERAL_SETTINGS, ...body };
 		try {

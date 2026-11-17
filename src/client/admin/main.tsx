@@ -21,6 +21,8 @@ interface Status {
 	setupViaIngress: boolean;
 	authenticated: boolean;
 	ingress: boolean;
+	restricted: boolean;
+	owner: boolean;
 }
 
 const NAV: { path: string; label: string; icon: Component<{ class?: string }> }[] = [
@@ -50,6 +52,21 @@ function IngressOnly() {
 					<strong class="text-ink">Settings</strong> to manage your displays from this address too.
 				</p>
 				<p class="text-sm text-muted">Displays work without it: their addresses are listed on the Displays page.</p>
+			</div>
+		</div>
+	);
+}
+
+/** Shown in the Home Assistant sidebar to users the access setting keeps out. */
+function AdminsOnly() {
+	return (
+		<div class="flex min-h-full items-center justify-center p-4">
+			<div class="card w-full max-w-sm space-y-4 p-6">
+				<Logo />
+				<p class="text-sm text-muted">Only Home Assistant administrators can manage SideDisplay here.</p>
+				<p class="text-sm text-muted">
+					An administrator can open it to all users under <strong class="text-ink">Settings</strong>.
+				</p>
 			</div>
 		</div>
 	);
@@ -195,7 +212,12 @@ function ShellPages(props: { status: Status; onSignOut: () => void }) {
 							<MediaPage />
 						</Match>
 						<Match when={page() === "settings"}>
-							<SettingsPage version={props.status.version} ingress={props.status.ingress} />
+							<SettingsPage
+								version={props.status.version}
+								ingress={props.status.ingress}
+								app={props.status.setupViaIngress}
+								owner={props.status.owner}
+							/>
 						</Match>
 					</Switch>
 				</main>
@@ -227,8 +249,10 @@ function App() {
 					<Show
 						when={s.authenticated}
 						fallback={
-							<Show when={!(s.setup && s.setupViaIngress)} fallback={<IngressOnly />}>
-								<Gate setup={s.setup} onDone={() => void refetch()} />
+							<Show when={!s.restricted} fallback={<AdminsOnly />}>
+								<Show when={!(s.setup && s.setupViaIngress)} fallback={<IngressOnly />}>
+									<Gate setup={s.setup} onDone={() => void refetch()} />
+								</Show>
 							</Show>
 						}
 					>

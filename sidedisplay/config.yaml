@@ -17,6 +17,9 @@ ingress_port: 4380
 ingress_stream: true
 panel_icon: mdi:monitor-dashboard
 panel_title: SideDisplay
+# Offered to every Home Assistant user; SideDisplay itself lets in administrators
+# only, or everyone, as chosen under Settings (see `fromIngress` in auth.ts).
+panel_admin: false
 
 # Screens cannot sign in to Home Assistant, so displays are opened on this port.
 ports:

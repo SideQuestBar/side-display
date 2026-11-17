@@ -2,11 +2,19 @@
  * Typed access to the key/value settings table.
  */
 import { eq } from "drizzle-orm";
-import { DEFAULT_GENERAL_SETTINGS, type GeneralSettings, type HaSettings, type MqttSettings } from "../shared/types";
+import {
+	DEFAULT_GENERAL_SETTINGS,
+	type GeneralSettings,
+	type HaAccess,
+	type HaSettings,
+	type MqttSettings,
+} from "../shared/types";
 import { db, schema } from "./db";
 
 interface SettingsMap {
 	"auth.passwordHash": string | null;
+	/** As a Home Assistant app: who the sidebar panel lets in. */
+	"auth.haAccess": HaAccess;
 	general: GeneralSettings;
 	ha: HaSettings;
 	mqtt: MqttSettings;
@@ -18,6 +26,7 @@ interface SettingsMap {
 
 const defaults: SettingsMap = {
 	"auth.passwordHash": null,
+	"auth.haAccess": "admins",
 	general: DEFAULT_GENERAL_SETTINGS,
 	ha: { url: "", token: "" },
 	mqtt: { url: "", username: "", password: "" },

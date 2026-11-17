@@ -7,13 +7,16 @@ import {
 	destroySession,
 	fromIngress,
 	hasPassword,
+	ingressRefused,
 	isAuthenticated,
+	isOwner,
 	loginBlockedFor,
 	MIN_PASSWORD_LENGTH,
 	recordLoginFailure,
 	SESSION_COOKIE,
 	setPassword,
 	verifyPassword,
+	viaIngress,
 } from "../auth";
 import { config } from "../config";
 
@@ -42,6 +45,10 @@ export const authRoutes = new Elysia({ name: "routes.auth", prefix: "/api/auth" 
 			setupViaIngress: config.trustIngress,
 			/** Signed in by Home Assistant: there is nothing to sign out of. */
 			ingress: fromIngress(request, address),
+			/** A Home Assistant user who is not an administrator, while only they are let in. */
+			restricted: ingressRefused(request, address),
+			/** May change the password and which Home Assistant users get in. */
+			owner: isOwner(request, address),
 		};
 	})
 	.post(
@@ -51,8 +58,9 @@ export const authRoutes = new Elysia({ name: "routes.auth", prefix: "/api/auth" 
 			if (crossSite(request)) return status(403, { error: "cross-site request refused" });
 			if (hasPassword()) return status(409, { error: "A password is already set." });
 			// As a Home Assistant app the first password is chosen from inside Home
-			// Assistant, not by whoever reaches the open port first.
-			if (config.trustIngress && !fromIngress(request, server?.requestIP(request)?.address)) {
+			// Assistant by an administrator, not by whoever reaches the open port first.
+			const address = server?.requestIP(request)?.address;
+			if (config.trustIngress && !(viaIngress(request, address) && isOwner(request, address))) {
 				return status(403, {
 					error: "Open SideDisplay from the Home Assistant sidebar and choose a password in Settings.",
 				});
@@ -95,9 +103,11 @@ export const authRoutes = new Elysia({ name: "routes.auth", prefix: "/api/auth" 
 		"/password",
 		{ body: t.Object({ current: t.String({ maxLength: 512 }), next: password }), cookie: sessionCookie },
 		async ({ body, cookie, request, server, status }) => {
+			const address = server?.requestIP(request)?.address;
+			if (!isOwner(request, address))
+				return status(403, { error: "Only a Home Assistant administrator can change the password." });
 			// Through ingress Home Assistant vouches for the user, who may never have known the password.
-			const viaIngress = fromIngress(request, server?.requestIP(request)?.address);
-			if (hasPassword() && !viaIngress && !(await verifyPassword(body.current)))
+			if (hasPassword() && !viaIngress(request, address) && !(await verifyPassword(body.current)))
 				return status(401, { error: "The current password is wrong." });
 			if (body.next.length < MIN_PASSWORD_LENGTH) return status(422, { error: tooShort });
 			await setPassword(body.next);

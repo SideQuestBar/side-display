@@ -4,6 +4,8 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { app } from "../src/server/app";
+import { setPassword } from "../src/server/auth";
+import { config } from "../src/server/config";
 import { alertText, statsOf, watts } from "../src/server/data/home";
 import { parseFeed, parseIcalEvents } from "../src/server/data/sources";
 import { byDate, filterFeed } from "../src/server/data/streams";
@@ -112,6 +114,130 @@ describe("authentication", () => {
 		expect((await call("/api/layouts", { anonymous: true, headers: { cookie: other } })).status).toBe(200);
 		await call("/api/auth/logout", { method: "POST", anonymous: true, headers: { cookie: other } });
 		expect((await call("/api/layouts", { anonymous: true, headers: { cookie: other } })).status).toBe(401);
+	});
+});
+
+describe("Home Assistant ingress", () => {
+	// The gate goes by the address a request comes from, so these run against a
+	// listening server whose peer address is replaced by Supervisor's.
+	const SUPERVISOR = "172.30.32.2";
+	const ADMIN = "system-admin,system-users";
+	const USER = "system-users";
+	let origin = "";
+	let peer: string | null = SUPERVISOR;
+
+	async function ingress(
+		path: string,
+		init: { groups?: string; method?: string; body?: unknown; headers?: Record<string, string> } = {},
+	) {
+		const headers: Record<string, string> = { "x-ingress-path": "/api/hassio_ingress/token", ...init.headers };
+		if (init.groups) headers["x-remote-user-groups"] = init.groups;
+		if (init.body !== undefined) headers["content-type"] = "application/json";
+		return fetch(origin + path, {
+			method: init.method ?? (init.body !== undefined ? "POST" : "GET"),
+			headers,
+			body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+		});
+	}
+	const status = async (groups?: string) => (await ingress("/api/auth/status", { groups })).json();
+
+	beforeAll(() => {
+		config.trustIngress = true;
+		app.listen({ hostname: "127.0.0.1", port: 0 });
+		const server = app.server!;
+		const requestIP = server.requestIP.bind(server);
+		server.requestIP = (request) => {
+			const real = requestIP(request);
+			return real && peer ? { ...real, address: peer } : real;
+		};
+		origin = `http://127.0.0.1:${server.port}`;
+	});
+	afterAll(async () => {
+		config.trustIngress = false;
+		setSetting("auth.haAccess", "admins");
+		await app.stop(true);
+	});
+
+	test("only administrators get in until the setting says otherwise", async () => {
+		expect(await status(ADMIN)).toMatchObject({ authenticated: true, ingress: true, restricted: false, owner: true });
+		expect((await ingress("/api/layouts", { groups: ADMIN })).status).toBe(200);
+
+		expect(await status(USER)).toMatchObject({ authenticated: false, ingress: false, restricted: true, owner: false });
+		expect((await ingress("/api/layouts", { groups: USER })).status).toBe(401);
+		// A Supervisor that does not say which groups the user is in vouches for nobody.
+		expect(await status()).toMatchObject({ authenticated: false, restricted: true });
+		expect((await ingress("/api/layouts")).status).toBe(401);
+		expect(
+			(await ingress("/api/settings/access", { groups: USER, method: "PUT", body: { access: "everyone" } })).status,
+		).toBe(401);
+	});
+
+	test("the same headers from any other address mean nothing", async () => {
+		peer = null;
+		try {
+			expect(await status(ADMIN)).toMatchObject({
+				authenticated: false,
+				ingress: false,
+				restricted: false,
+				owner: false,
+			});
+			expect((await ingress("/api/layouts", { groups: ADMIN })).status).toBe(401);
+		} finally {
+			peer = SUPERVISOR;
+		}
+	});
+
+	test("an administrator opens it to every user", async () => {
+		expect(
+			(await ingress("/api/settings/access", { groups: ADMIN, method: "PUT", body: { access: "nobody" } })).status,
+		).toBe(422);
+		const opened = await ingress("/api/settings/access", {
+			groups: ADMIN,
+			method: "PUT",
+			body: { access: "everyone" },
+		});
+		expect(opened.status).toBe(200);
+		expect(await json<{ access: string }>("/api/settings")).toMatchObject({ access: "everyone" });
+
+		expect(await status(USER)).toMatchObject({ authenticated: true, ingress: true, restricted: false, owner: false });
+		expect((await ingress("/api/layouts", { groups: USER })).status).toBe(200);
+		expect((await ingress("/api/layouts", { groups: USER, body: { name: "By a member of staff" } })).status).toBe(200);
+	});
+
+	test("other users cannot change who gets in", async () => {
+		const closing = await ingress("/api/settings/access", { groups: USER, method: "PUT", body: { access: "admins" } });
+		expect(closing.status).toBe(403);
+		const password = await ingress("/api/auth/password", {
+			groups: USER,
+			body: { current: "", next: "taken over by staff" },
+		});
+		expect(password.status).toBe(403);
+		// Nor choose the first password, were there none yet.
+		setSetting("auth.passwordHash", "");
+		try {
+			expect(
+				(await ingress("/api/auth/setup", { groups: USER, body: { password: "taken over by staff" } })).status,
+			).toBe(403);
+			expect((await ingress("/api/auth/setup", { groups: ADMIN, body: { password: PASSWORD } })).status).toBe(200);
+		} finally {
+			await setPassword(PASSWORD);
+		}
+		expect(await json<{ access: string }>("/api/settings")).toMatchObject({ access: "everyone" });
+	});
+
+	test("someone signed in with the password can change it too", async () => {
+		expect((await call("/api/settings/access", { method: "PUT", body: { access: "admins" } })).status).toBe(200);
+		expect((await ingress("/api/layouts", { groups: USER })).status).toBe(401);
+		expect((await ingress("/api/layouts", { groups: ADMIN })).status).toBe(200);
+	});
+
+	test("an administrator changes the password without knowing it", async () => {
+		const changed = await ingress("/api/auth/password", { groups: ADMIN, body: { current: "", next: PASSWORD } });
+		expect(changed.status).toBe(200);
+		// That signed every browser out, the one these tests use included.
+		const login = await call("/api/auth/login", { body: { password: PASSWORD }, anonymous: true });
+		cookie = login.headers.get("set-cookie")!.split(";")[0]!;
+		expect((await call("/api/layouts")).status).toBe(200);
 	});
 });
 

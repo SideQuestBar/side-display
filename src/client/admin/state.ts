@@ -2,11 +2,12 @@
  * Data shared across admin pages, loaded once and refreshed on demand.
  */
 import { createResource, createRoot, createSignal } from "solid-js";
-import type { Display, GeneralSettings, HaStatus, Layout, MediaItem, MqttStatus } from "../../shared/types";
+import type { Display, GeneralSettings, HaAccess, HaStatus, Layout, MediaItem, MqttStatus } from "../../shared/types";
 import { api } from "../lib/api";
 
 export interface SettingsPayload {
 	general: GeneralSettings;
+	access: HaAccess;
 	ha: { url: string; hasToken: boolean; status: HaStatus };
 	mqtt: { url: string; username: string; hasPassword: boolean; status: MqttStatus };
 }

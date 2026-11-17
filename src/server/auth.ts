@@ -99,18 +99,51 @@ export const clearLoginFailures = (address: string) => failures.delete(address);
 
 /** Supervisor's ingress proxy always connects from this address. */
 const INGRESS_ADDRESS = "172.30.32.2";
+/** Home Assistant's administrators, as Supervisor names them in `X-Remote-User-Groups`. */
+const HA_ADMIN_GROUP = "system-admin";
 
-/** True for requests Home Assistant already authenticated (its ingress proxy). */
-export function fromIngress(request: Request, remoteAddress: string | undefined): boolean {
+/** True for requests relayed by Home Assistant's ingress proxy, which has signed the user in. */
+export function viaIngress(request: Request, remoteAddress: string | undefined): boolean {
 	if (!config.trustIngress || !request.headers.has("x-ingress-path")) return false;
 	return remoteAddress?.replace(/^::ffff:/, "") === INGRESS_ADDRESS;
 }
+
+/**
+ * Whether the Home Assistant user behind an ingress request is an administrator.
+ * Supervisor sets the header itself and drops whatever the browser sent; without
+ * it (Supervisor older than 2026.10.4) nobody counts as one.
+ */
+const ingressAdmin = (request: Request) =>
+	(request.headers.get("x-remote-user-groups") ?? "").split(",").some((group) => group.trim() === HA_ADMIN_GROUP);
+
+/**
+ * True for ingress requests whose user may manage SideDisplay. The sidebar panel
+ * is offered to every Home Assistant user (`panel_admin: false`); the setting
+ * decides whether those who are not administrators get in.
+ */
+export function fromIngress(request: Request, remoteAddress: string | undefined): boolean {
+	return viaIngress(request, remoteAddress) && (getSetting("auth.haAccess") === "everyone" || ingressAdmin(request));
+}
+
+/** True for a Home Assistant user the setting keeps out. */
+export const ingressRefused = (request: Request, remoteAddress: string | undefined) =>
+	viaIngress(request, remoteAddress) && !fromIngress(request, remoteAddress);
 
 const cookieValue = (request: Request, name: string) =>
 	new Bun.CookieMap(request.headers.get("cookie") ?? "").get(name);
 
 export function isAuthenticated(request: Request, remoteAddress: string | undefined): boolean {
 	return fromIngress(request, remoteAddress) || validSession(cookieValue(request, SESSION_COOKIE));
+}
+
+/**
+ * True for whoever may decide who gets in (the password, and which Home
+ * Assistant users): a Home Assistant administrator, or someone signed in with
+ * the password. Other Home Assistant users manage everything else.
+ */
+export function isOwner(request: Request, remoteAddress: string | undefined): boolean {
+	if (viaIngress(request, remoteAddress)) return ingressAdmin(request);
+	return validSession(cookieValue(request, SESSION_COOKIE));
 }
 
 /**
