@@ -44,7 +44,15 @@ import { api, url } from "../lib/api";
 import { displayUrl } from "./Displays";
 import { Advanced, Fields } from "./fields";
 import { ElementIcon } from "./icons";
-import { displays, navigate, refetchDisplays, refetchLayouts, settings } from "./state";
+import {
+	displays,
+	displaysShowing,
+	navigate,
+	refetchDisplays,
+	refetchLayouts,
+	refetchPlaylists,
+	settings,
+} from "./state";
 import { attempt, confirmAction, Modal, toast } from "./ui";
 
 interface Draft {
@@ -176,7 +184,8 @@ export function EditorPage(props: { id: string }) {
 
 	// Saving a layout changes every screen that shows it: say which ones.
 	void refetchDisplays();
-	const usedBy = createMemo(() => (displays() ?? []).filter((d) => d.playlist.some((e) => e.layoutId === props.id)));
+	void refetchPlaylists();
+	const usedBy = createMemo(() => displaysShowing(props.id));
 
 	onMount(async () => {
 		const layout = await attempt(() => api<Layout>(`api/layouts/${props.id}`));

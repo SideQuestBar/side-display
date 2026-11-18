@@ -17,7 +17,17 @@ import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { TEMPLATES } from "../../shared/templates";
 import type { Layout } from "../../shared/types";
 import { api, url } from "../lib/api";
-import { displays, folders, layouts, navigate, refetchDisplays, refetchFolders, refetchLayouts } from "./state";
+import {
+	displaysShowing,
+	folders,
+	layouts,
+	navigate,
+	playlists,
+	refetchDisplays,
+	refetchFolders,
+	refetchLayouts,
+	refetchPlaylists,
+} from "./state";
 import { ArchiveToggle, attempt, confirmAction, EmptyState, FormField, Modal, PageHeader, Thumbnail } from "./ui";
 
 /** What the page lists: everything in use, one folder ("" = the layouts in none), or the archive. */
@@ -32,6 +42,7 @@ export function LayoutsPage() {
 	/** The folder dialog: a new folder, or the one being renamed. */
 	const [naming, setNaming] = createSignal<{ rename?: string } | null>(null);
 	void refetchLayouts();
+	void refetchPlaylists();
 	void refetchFolders();
 
 	const archived = createMemo(() => (layouts() ?? []).filter((l) => l.archivedAt));
@@ -52,7 +63,9 @@ export function LayoutsPage() {
 		return names.map((name) => ({ name, layouts: shown.filter((l) => l.folder === name) }));
 	});
 
-	const usedBy = (id: string) => (displays() ?? []).filter((d) => d.playlist.some((e) => e.layoutId === id)).length;
+	const usedBy = (id: string) => displaysShowing(id).length;
+	const inPlaylists = (id: string) =>
+		(playlists() ?? []).filter((p) => p.entries.some((e) => e.layoutId === id)).length;
 
 	const create = async (templateId: string) => {
 		const template = TEMPLATES.find((t) => t.id === templateId)!;
@@ -76,13 +89,17 @@ export function LayoutsPage() {
 
 	const remove = async (layout: Layout) => {
 		const used = usedBy(layout.id);
+		const listed = inPlaylists(layout.id);
 		const text = used
 			? `"${layout.name}" is shown on ${used} display${used > 1 ? "s" : ""}; it will be removed from them.`
-			: `"${layout.name}" will be deleted for good.`;
+			: listed
+				? `"${layout.name}" is in ${listed} playlist${listed > 1 ? "s" : ""}; it will be removed from ${listed > 1 ? "them" : "it"}.`
+				: `"${layout.name}" will be deleted for good.`;
 		if (!(await confirmAction("Delete this layout?", text))) return;
 		await attempt(() => api(`api/layouts/${layout.id}`, { method: "DELETE" }), "Layout deleted.");
 		void refetchLayouts();
 		void refetchDisplays();
+		void refetchPlaylists();
 	};
 
 	const setArchived = async (layout: Layout, to: boolean) => {

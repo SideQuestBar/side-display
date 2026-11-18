@@ -16,7 +16,7 @@ import { PacketReader, PacketType, packet, text } from "../src/server/mqtt/packe
 import { setSetting } from "../src/server/settings";
 import { notifyEntities } from "../src/server/store";
 import { entitiesOf, makeElement } from "../src/shared/layout";
-import type { Display, ElementData, Layout, MediaItem, ViewPayload } from "../src/shared/types";
+import type { Display, ElementData, Layout, MediaItem, Playlist, ViewPayload } from "../src/shared/types";
 import { FAKE_TOKEN, type FakeHa, startFakeHa } from "./fake-ha";
 import { type FakeMqtt, startFakeMqtt } from "./fake-mqtt";
 
@@ -419,6 +419,61 @@ describe("layouts and displays", () => {
 		await call("/api/folders/delete", { body: { name: "Bar" } });
 		expect((await json<Layout>(`/api/layouts/${layout.id}`)).folder).toBe("");
 		expect(await json<string[]>("/api/folders")).toEqual([]);
+	});
+
+	test("a display shows a playlist in place of its own layouts, and keeps them", async () => {
+		const other = await json<Layout>("/api/layouts", { body: { name: "Menu" } });
+		const view = async () =>
+			(await json<ViewPayload>(`/api/view/${display.id}`, { anonymous: true })).entries.map((e) => e.layout.id);
+		const put = <T>(path: string, body: unknown) => json<T>(path, { method: "PUT", body });
+		expect((await call("/api/playlists", { anonymous: true })).status).toBe(401);
+
+		// A list of layout ids is enough to make a playlist.
+		const playlist = await json<Playlist>("/api/playlists", {
+			body: { name: " Evening ", entries: [{ layoutId: other.id }, { layoutId: layout.id, seconds: 10 }, "junk"] },
+		});
+		expect(playlist).toMatchObject({
+			name: "Evening",
+			entries: [
+				{ layoutId: other.id, seconds: 30, days: [], from: "", to: "" },
+				{ layoutId: layout.id, seconds: 10 },
+			],
+		});
+		expect(await json<Playlist[]>("/api/playlists")).toHaveLength(1);
+		expect(await view()).toEqual([layout.id]);
+
+		const following = await put<Display>(`/api/displays/${display.id}`, { playlistId: playlist.id });
+		expect(following.playlistId).toBe(playlist.id);
+		expect(following.playlist).toHaveLength(2);
+		expect(await view()).toEqual([other.id, layout.id]);
+		// Editing the playlist changes what the display shows; other saves leave the choice alone.
+		await put(`/api/playlists/${playlist.id}`, { entries: [{ layoutId: other.id }] });
+		expect((await put<Display>(`/api/displays/${display.id}`, { name: "Lobby TV" })).playlistId).toBe(playlist.id);
+		expect(await view()).toEqual([other.id]);
+		// A playlist that does not exist is not followed.
+		expect((await put<Display>(`/api/displays/${display.id}`, { playlistId: "nope" })).playlistId).toBe("");
+		expect(await view()).toEqual([layout.id]);
+
+		// Deleting a layout takes it out of playlists; deleting a playlist leaves its layouts on the displays.
+		await put(`/api/displays/${display.id}`, { playlistId: playlist.id });
+		const extra = await json<Layout>("/api/layouts", { body: { name: "Extra" } });
+		await put(`/api/playlists/${playlist.id}`, { entries: [{ layoutId: other.id }, { layoutId: extra.id }] });
+		await call(`/api/layouts/${extra.id}`, { method: "DELETE" });
+		expect((await json<Playlist>(`/api/playlists/${playlist.id}`)).entries.map((e) => e.layoutId)).toEqual([other.id]);
+		expect((await call(`/api/playlists/${playlist.id}`, { method: "DELETE" })).status).toBe(200);
+		expect((await call(`/api/playlists/${playlist.id}`)).status).toBe(404);
+		const kept = await json<Display>(`/api/displays/${display.id}`);
+		expect(kept).toMatchObject({ playlistId: "", playlist: [{ layoutId: other.id }] });
+		expect(await view()).toEqual([other.id]);
+
+		// Back to how the next tests expect it.
+		await put(`/api/displays/${display.id}`, {
+			playlist: [
+				{ layoutId: layout.id, seconds: 20 },
+				{ layoutId: "missing", seconds: 20 },
+			],
+		});
+		await call(`/api/layouts/${other.id}`, { method: "DELETE" });
 	});
 
 	test("deleting a layout removes it from playlists", async () => {

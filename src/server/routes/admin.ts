@@ -19,19 +19,24 @@ import {
 	createDisplay,
 	createFolder,
 	createLayout,
+	createPlaylist,
 	deleteDisplay,
 	deleteFolder,
 	deleteLayout,
+	deletePlaylist,
 	getDisplay,
 	getLayout,
+	getPlaylist,
 	listDisplays,
 	listFolders,
 	listLayouts,
+	listPlaylists,
 	renameFolder,
 	SlugTaken,
 	settingsChanged,
 	updateDisplay,
 	updateLayout,
+	updatePlaylist,
 } from "../store";
 
 const id = t.Object({ id: t.String() });
@@ -48,6 +53,7 @@ const displayBody = t.Object({
 	name: t.Optional(t.String({ maxLength: 120 })),
 	slug: t.Optional(t.String({ maxLength: 120 })),
 	playlist: t.Optional(t.Unknown()),
+	playlistId: t.Optional(t.Nullable(t.String({ maxLength: 120 }))),
 	settings: t.Optional(t.Unknown()),
 	archived: t.Optional(t.Boolean()),
 });
@@ -109,6 +115,24 @@ const folderRoutes = new Elysia({ prefix: "/folders" })
 		deleteFolder(body.name);
 		return { ok: true };
 	});
+
+const playlistBody = t.Object({
+	name: t.Optional(t.String({ maxLength: 120 })),
+	/** `{ layoutId }` is enough for an entry: the rest gets its defaults. */
+	entries: t.Optional(t.Unknown()),
+});
+const playlistRoutes = new Elysia({ prefix: "/playlists" })
+	.get("/", () => listPlaylists())
+	.post("/", { body: playlistBody }, ({ body }) => createPlaylist(body))
+	.get("/:id", { params: id }, ({ params, status }) => getPlaylist(params.id) ?? status(404, notFound))
+	.put(
+		"/:id",
+		{ params: id, body: playlistBody },
+		({ params, body, status }) => updatePlaylist(params.id, body) ?? status(404, notFound),
+	)
+	.delete("/:id", { params: id }, ({ params, status }) =>
+		deletePlaylist(params.id) ? { ok: true } : status(404, notFound),
+	);
 
 const displayRoutes = new Elysia({ prefix: "/displays" })
 	.get("/", () => listDisplays())
@@ -306,6 +330,7 @@ const settingsRoutes = new Elysia()
 export const adminRoutes = new Elysia({ name: "routes.admin", prefix: "/api" })
 	.use(layoutRoutes)
 	.use(folderRoutes)
+	.use(playlistRoutes)
 	.use(displayRoutes)
 	.use(mediaRoutes)
 	.use(settingsRoutes);

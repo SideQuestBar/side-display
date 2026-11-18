@@ -5,7 +5,7 @@
 
 import { listMedia, saveUpload } from "../src/server/media";
 import { setSetting } from "../src/server/settings";
-import { createDisplay, createLayout, listLayouts } from "../src/server/store";
+import { createDisplay, createLayout, createPlaylist, listLayouts } from "../src/server/store";
 import { makeElement } from "../src/shared/layout";
 import { TEMPLATES } from "../src/shared/templates";
 
@@ -248,13 +248,14 @@ export async function seedDemo(sampleServer: string) {
 		],
 	});
 
-	createDisplay({
-		name: "Bar TV",
-		playlist: [
+	const rotation = createPlaylist({
+		name: "Bar rotation",
+		entries: [
 			{ layoutId: welcome.id, seconds: 45 },
 			{ layoutId: frame.id, seconds: 20 },
 		],
 	});
+	createDisplay({ name: "Bar TV", playlistId: rotation.id });
 	createDisplay({
 		name: "Hallway tablet",
 		playlist: [{ layoutId: dashboard.id, seconds: 60 }],

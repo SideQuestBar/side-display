@@ -38,7 +38,7 @@ src/
     index.ts         Process entry: migrations, Home Assistant, listen
     app.ts           The Elysia app and the authentication gate
     auth.ts          Password, sessions, request gate
-    store.ts         Layouts and displays (Drizzle), live-stream bookkeeping
+    store.ts         Layouts, playlists and displays (Drizzle), live-stream bookkeeping
     media.ts         Uploads, resizing, file serving
     events.ts        Pub/sub behind the displays' live streams
     onboarding.ts    First-run guide: suggested settings, place search

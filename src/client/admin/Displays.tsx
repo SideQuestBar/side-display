@@ -1,13 +1,11 @@
 import {
 	Archive,
 	ArchiveRestore,
-	ArrowDown,
-	ArrowUp,
-	ChevronDown,
-	ChevronRight,
 	Copy,
 	ExternalLink,
 	LayoutDashboard,
+	ListPlus,
+	ListVideo,
 	Pencil,
 	Plus,
 	RefreshCw,
@@ -22,12 +20,22 @@ import {
 	DEFAULT_DISPLAY_SETTINGS,
 	type Display,
 	type DisplaySettings,
-	type Layout,
+	type Playlist,
 	type PlaylistEntry,
 } from "../../shared/types";
 import { api, url } from "../lib/api";
-import { DaysInput } from "./fields";
-import { displays, layouts, navigate, refetchDisplays, refetchLayouts } from "./state";
+import { EntryList, EntrySummary } from "./Playlists";
+import {
+	displays,
+	layouts,
+	navigate,
+	playlistOf,
+	playlists,
+	refetchDisplays,
+	refetchLayouts,
+	refetchPlaylists,
+	shownEntries,
+} from "./state";
 import {
 	ArchiveToggle,
 	attempt,
@@ -52,14 +60,15 @@ export function DisplaysPage(props: { ingress: boolean }) {
 	const shown = createMemo(() => (displays() ?? []).filter((d) => Boolean(d.archivedAt) === showArchived()));
 	void refetchDisplays();
 	void refetchLayouts();
+	void refetchPlaylists();
 	// Connection status changes without us doing anything: keep it fresh.
 	const timer = setInterval(() => !editing() && refetchDisplays(), 10_000);
 	onCleanup(() => clearInterval(timer));
 
-	const layoutOf = (display: Display) => (layouts() ?? []).find((l) => l.id === display.playlist[0]?.layoutId);
-	/** The layouts a display shows, in playlist order, each once. */
+	const layoutOf = (display: Display) => (layouts() ?? []).find((l) => l.id === shownEntries(display)[0]?.layoutId);
+	/** The layouts a display shows, in order, each once. */
 	const layoutsOf = (display: Display) =>
-		[...new Set(display.playlist.map((entry) => entry.layoutId))].flatMap(
+		[...new Set(shownEntries(display).map((entry) => entry.layoutId))].flatMap(
 			(id) => (layouts() ?? []).find((l) => l.id === id) ?? [],
 		);
 	const copy = async (display: Display) => {
@@ -170,6 +179,19 @@ export function DisplaysPage(props: { ingress: boolean }) {
 											: `Last seen ${timeAgo(display.lastSeenAt)}`}
 									</div>
 									<div class="flex flex-wrap gap-1.5">
+										<Show when={playlistOf(display)}>
+											{(playlist) => (
+												<button
+													type="button"
+													class="badge max-w-full hover:border-accent hover:text-ink"
+													onClick={() => navigate("playlists")}
+													title={`Shows the playlist "${playlist().name}"`}
+												>
+													<ListVideo class="size-3 shrink-0" />
+													<span class="truncate">{playlist().name}</span>
+												</button>
+											)}
+										</Show>
 										<For each={layoutsOf(display)} fallback={<span class="badge">No layout</span>}>
 											{(layout) => (
 												<button
@@ -280,36 +302,37 @@ function DisplayEditor(props: { display: Display | null; onClose: () => void }) 
 	const [form, setForm] = createStore<{
 		name: string;
 		slug: string;
-		playlist: PlaylistEntry[];
+		playlistId: string;
 		settings: DisplaySettings;
 	}>(
 		structuredClone({
 			name: props.display?.name ?? "",
 			slug: props.display?.slug ?? "",
-			playlist: props.display?.playlist ?? [],
+			playlistId: props.display?.playlistId ?? "",
 			settings: props.display?.settings ?? DEFAULT_DISPLAY_SETTINGS,
 		}),
 	);
-	const [scheduling, setScheduling] = createSignal<number | null>(null);
+	// The display's own layouts. They are kept while it follows a playlist, and come back when it stops.
+	const [entries, setEntries] = createStore<PlaylistEntry[]>(structuredClone(props.display?.playlist ?? []));
 	const setting = <K extends keyof DisplaySettings>(key: K, value: DisplaySettings[K]) =>
 		setForm("settings", key, value);
+	const followed = () => (playlists() ?? []).find((p) => p.id === form.playlistId);
 
-	/** The layouts a playlist entry can pick: archived ones are left out, except the one it already shows. */
-	const pickable = (keep?: string) => (layouts() ?? []).filter((l) => !l.archivedAt || l.id === keep);
-	const optionLabel = (l: Layout) => `${l.folder ? `${l.folder} / ` : ""}${l.name}${l.archivedAt ? " (archived)" : ""}`;
-	const addLayout = (layoutId: string) =>
-		layoutId && setForm("playlist", form.playlist.length, { layoutId, seconds: 30, days: [], from: "", to: "" });
-	const move = (index: number, by: number) => {
-		const next = [...unwrap(form.playlist)];
-		const target = index + by;
-		if (target < 0 || target >= next.length) return;
-		[next[index], next[target]] = [next[target]!, next[index]!];
-		setForm("playlist", next);
+	/** Turns the display's own list into a playlist other displays can show too, and follows it. */
+	const saveAsPlaylist = async () => {
+		const name = `${form.name.trim() || "New"} playlist`;
+		const created = await attempt(
+			() => api<Playlist>("api/playlists", { body: { name, entries: unwrap(entries) } }),
+			`Playlist "${name}" created. Rename it on the Playlists page.`,
+		);
+		if (!created) return;
+		await refetchPlaylists();
+		setForm("playlistId", created.id);
 	};
 
 	const save = async () => {
 		if (!form.name.trim()) return toast("Give the display a name.", "error");
-		const body = unwrap(form);
+		const body = { ...unwrap(form), playlist: unwrap(entries) };
 		const result = props.display
 			? await attempt(() => api(`api/displays/${props.display!.id}`, { method: "PUT", body }), "Display saved.")
 			: await attempt(() => api("api/displays", { body }), "Display created.");
@@ -360,116 +383,49 @@ function DisplayEditor(props: { display: Display | null; onClose: () => void }) 
 				/>
 			</FormField>
 
-			<div>
-				<div class="label">Layouts</div>
-				<div class="space-y-1.5">
-					<For
-						each={form.playlist}
-						fallback={<p class="help !mt-0">Add a layout to show. With several, the display cycles through them.</p>}
-					>
-						{(entry, i) => (
-							<div class="rounded-lg border border-line bg-raised/50 p-2">
-								<div class="flex items-center gap-1.5">
-									<select
-										class="input"
-										value={entry.layoutId}
-										aria-label="Layout"
-										onChange={(e) => setForm("playlist", i(), "layoutId", e.currentTarget.value)}
-									>
-										<For each={pickable(entry.layoutId)}>{(l) => <option value={l.id}>{optionLabel(l)}</option>}</For>
-									</select>
-									<Show when={form.playlist.length > 1}>
-										<input
-											class="input !w-20"
-											type="number"
-											min="3"
-											value={entry.seconds}
-											aria-label="Seconds"
-											title="Seconds on screen"
-											onInput={(e) => setForm("playlist", i(), "seconds", Number(e.currentTarget.value) || 30)}
-										/>
-										<span class="text-xs text-muted">s</span>
-										<button
-											type="button"
-											class="btn btn-ghost btn-icon !p-1"
-											disabled={i() === 0}
-											onClick={() => move(i(), -1)}
-											aria-label="Move up"
-										>
-											<ArrowUp />
-										</button>
-										<button
-											type="button"
-											class="btn btn-ghost btn-icon !p-1"
-											disabled={i() === form.playlist.length - 1}
-											onClick={() => move(i(), 1)}
-											aria-label="Move down"
-										>
-											<ArrowDown />
-										</button>
-									</Show>
-									<button
-										type="button"
-										class="btn btn-ghost btn-icon btn-danger !p-1"
-										onClick={() =>
-											setForm(
-												"playlist",
-												form.playlist.filter((_, index) => index !== i()),
-											)
-										}
-										aria-label="Remove"
-									>
-										<Trash2 />
-									</button>
-								</div>
-								<button
-									type="button"
-									class="mt-1.5 flex items-center gap-1 text-xs text-muted hover:text-ink"
-									onClick={() => setScheduling(scheduling() === i() ? null : i())}
-								>
-									<Show when={scheduling() === i()} fallback={<ChevronRight class="size-3.5" />}>
-										<ChevronDown class="size-3.5" />
-									</Show>
-									{entry.days.length || entry.from || entry.to ? "Scheduled" : "Always shown"}
-								</button>
-								<Show when={scheduling() === i()}>
-									<div class="mt-2 space-y-2">
-										<DaysInput value={entry.days} set={(days) => setForm("playlist", i(), "days", days)} />
-										<div class="flex items-center gap-2 text-xs text-muted">
-											from
-											<input
-												class="input"
-												type="time"
-												value={entry.from}
-												onInput={(e) => setForm("playlist", i(), "from", e.currentTarget.value)}
-											/>
-											to
-											<input
-												class="input"
-												type="time"
-												value={entry.to}
-												onInput={(e) => setForm("playlist", i(), "to", e.currentTarget.value)}
-											/>
-										</div>
-										<p class="help !mt-0">No day selected = every day. Empty times = all day.</p>
-									</div>
-								</Show>
-							</div>
-						)}
-					</For>
-					<select
-						class="input"
-						aria-label="Add a layout"
-						onChange={(e) => {
-							addLayout(e.currentTarget.value);
-							e.currentTarget.value = "";
-						}}
-					>
-						<option value="">+ Add a layout…</option>
-						<For each={pickable()}>{(l) => <option value={l.id}>{optionLabel(l)}</option>}</For>
+			<Show when={playlists()?.length}>
+				<FormField
+					label="Shows"
+					help={
+						followed()
+							? "The playlist is edited on the Playlists page, for every display showing it at once."
+							: undefined
+					}
+				>
+					<select class="input" value={form.playlistId} onChange={(e) => setForm("playlistId", e.currentTarget.value)}>
+						<option value="">Layouts chosen here</option>
+						<optgroup label="Playlists">
+							<For each={playlists()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
+						</optgroup>
 					</select>
-				</div>
-			</div>
+				</FormField>
+			</Show>
+
+			<Show
+				when={followed()}
+				fallback={
+					<div>
+						<div class="label">Layouts</div>
+						<EntryList
+							entries={entries}
+							set={setEntries}
+							empty="Add a layout to show. With several, the display cycles through them."
+						/>
+						<Show when={entries.length > 1}>
+							<button
+								type="button"
+								class="mt-2 flex items-center gap-1 text-xs text-muted hover:text-ink"
+								onClick={saveAsPlaylist}
+								title="Other displays can then show the same list"
+							>
+								<ListPlus class="size-3.5" /> Save these layouts as a playlist
+							</button>
+						</Show>
+					</div>
+				}
+			>
+				{(playlist) => <EntrySummary entries={playlist().entries} />}
+			</Show>
 
 			<FormField label="Screen type" help={COLOR_MODES.find((m) => m.value === form.settings.colorMode)?.hint}>
 				<select

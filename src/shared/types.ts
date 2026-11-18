@@ -179,7 +179,7 @@ export interface Layout {
 	updatedAt: number;
 }
 
-/** One entry of a display's playlist. */
+/** One layout in a list of layouts to show: a playlist's, or a display's own. */
 export interface PlaylistEntry {
 	layoutId: string;
 	/** How long the layout stays up when the display cycles. */
@@ -188,6 +188,15 @@ export interface PlaylistEntry {
 	days: number[];
 	from: string;
 	to: string;
+}
+
+/** A named list of layouts that any number of displays can show. */
+export interface Playlist {
+	id: string;
+	name: string;
+	entries: PlaylistEntry[];
+	createdAt: number;
+	updatedAt: number;
 }
 
 export interface DisplaySettings {
@@ -226,7 +235,10 @@ export interface Display {
 	name: string;
 	/** Short name that opens the display as well as its id (`/d/<slug>`); empty = none. */
 	slug: string;
+	/** The display's own layouts, shown while it follows no playlist. */
 	playlist: PlaylistEntry[];
+	/** The playlist the display shows in place of its own layouts; empty = none. */
+	playlistId: string;
 	settings: DisplaySettings;
 	/** When it was archived: out of the admin's main list, but its address keeps working. */
 	archivedAt: number | null;

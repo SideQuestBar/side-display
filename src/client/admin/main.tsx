@@ -1,7 +1,7 @@
 /**
  * Admin entry: first-run setup or sign-in, then the app shell with its pages.
  */
-import { Images, LayoutDashboard, LogOut, Monitor, Settings } from "lucide-solid";
+import { Images, LayoutDashboard, ListVideo, LogOut, Monitor, Settings } from "lucide-solid";
 import { type Component, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Dynamic, render } from "solid-js/web";
 import type { SetupInfo } from "../../shared/types";
@@ -11,6 +11,7 @@ import { EditorPage } from "./Editor";
 import { LayoutsPage } from "./Layouts";
 import { MediaPage } from "./Media";
 import { Onboarding } from "./Onboarding";
+import { PlaylistsPage } from "./Playlists";
 import { SettingsPage } from "./Settings";
 import { navigate, route } from "./state";
 import { attempt, ConfirmHost, Toasts } from "./ui";
@@ -27,6 +28,7 @@ interface Status {
 
 const NAV: { path: string; label: string; icon: Component<{ class?: string }> }[] = [
 	{ path: "displays", label: "Displays", icon: Monitor },
+	{ path: "playlists", label: "Playlists", icon: ListVideo },
 	{ path: "layouts", label: "Layouts", icon: LayoutDashboard },
 	{ path: "media", label: "Media", icon: Images },
 	{ path: "settings", label: "Settings", icon: Settings },
@@ -207,6 +209,9 @@ function ShellPages(props: { status: Status; onSignOut: () => void }) {
 					<Switch fallback={<DisplaysPage ingress={props.status.ingress} />}>
 						<Match when={page() === "layouts"}>
 							<LayoutsPage />
+						</Match>
+						<Match when={page() === "playlists"}>
+							<PlaylistsPage />
 						</Match>
 						<Match when={page() === "media"}>
 							<MediaPage />

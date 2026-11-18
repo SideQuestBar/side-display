@@ -2,7 +2,17 @@
  * Data shared across admin pages, loaded once and refreshed on demand.
  */
 import { createResource, createRoot, createSignal } from "solid-js";
-import type { Display, GeneralSettings, HaAccess, HaStatus, Layout, MediaItem, MqttStatus } from "../../shared/types";
+import type {
+	Display,
+	GeneralSettings,
+	HaAccess,
+	HaStatus,
+	Layout,
+	MediaItem,
+	MqttStatus,
+	Playlist,
+	PlaylistEntry,
+} from "../../shared/types";
 import { api } from "../lib/api";
 
 export interface SettingsPayload {
@@ -23,6 +33,8 @@ export const {
 	refetchLayouts,
 	folderNames,
 	refetchFolders,
+	playlists,
+	refetchPlaylists,
 	displays,
 	refetchDisplays,
 	media,
@@ -34,6 +46,7 @@ export const {
 } = createRoot(() => {
 	const [layouts, { refetch: refetchLayouts }] = createResource(() => api<Layout[]>("api/layouts"));
 	const [folderNames, { refetch: refetchFolders }] = createResource(() => api<string[]>("api/folders"));
+	const [playlists, { refetch: refetchPlaylists }] = createResource(() => api<Playlist[]>("api/playlists"));
 	const [displays, { refetch: refetchDisplays }] = createResource(() => api<Display[]>("api/displays"));
 	const [media, { refetch: refetchMedia }] = createResource(() => api<MediaItem[]>("api/media"));
 	const [settings, { refetch: refetchSettings }] = createResource(() => api<SettingsPayload>("api/settings"));
@@ -45,6 +58,8 @@ export const {
 		refetchLayouts,
 		folderNames,
 		refetchFolders,
+		playlists,
+		refetchPlaylists,
 		displays,
 		refetchDisplays,
 		media,
@@ -58,6 +73,17 @@ export const {
 
 /** The layout folders, sorted; empty ones included. */
 export const folders = () => folderNames() ?? [];
+
+/** The playlist a display follows, if it follows one. */
+export const playlistOf = (display: Display) =>
+	display.playlistId ? (playlists() ?? []).find((p) => p.id === display.playlistId) : undefined;
+
+/** What a display shows: the layouts of its playlist when it follows one, its own otherwise. */
+export const shownEntries = (display: Display): PlaylistEntry[] => playlistOf(display)?.entries ?? display.playlist;
+
+/** The displays a layout is on, directly or through a playlist. */
+export const displaysShowing = (layoutId: string) =>
+	(displays() ?? []).filter((d) => shownEntries(d).some((e) => e.layoutId === layoutId));
 
 /** Album names in use, sorted. */
 export const albums = () =>

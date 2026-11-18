@@ -37,6 +37,14 @@ export const layouts = sqliteTable("layouts", {
 	...timestamps,
 });
 
+/** Named lists of layouts, shared by the displays that point at them. */
+export const playlists = sqliteTable("playlists", {
+	id: text().primaryKey(),
+	name: text().notNull(),
+	entries: text({ mode: "json" }).$type<PlaylistEntry[]>().notNull(),
+	...timestamps,
+});
+
 export const displays = sqliteTable(
 	"displays",
 	{
@@ -44,7 +52,10 @@ export const displays = sqliteTable(
 		name: text().notNull(),
 		/** Optional short name for the address (`/d/<slug>`); null when the display has none. */
 		slug: text(),
+		/** The display's own layouts. */
 		playlist: text({ mode: "json" }).$type<PlaylistEntry[]>().notNull(),
+		/** The playlist shown instead of them; null = the display's own layouts. No foreign key: the store keeps it valid. */
+		playlistId: text("playlist_id"),
 		settings: text({ mode: "json" }).$type<DisplaySettings>().notNull(),
 		lastSeenAt: integer("last_seen_at"),
 		archivedAt: integer("archived_at"),

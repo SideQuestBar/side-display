@@ -36,7 +36,8 @@ layout and every screen showing it updates within a second.
 - **MQTT**: show what sensors and devices publish on a broker, the moment
   they publish it.
 - **Playlists and schedules**: a display can cycle through layouts, and show
-  some only on certain days or hours.
+  some only on certain days or hours. A playlist can be shared by several
+  displays, so changing it once changes them all.
 - **Built for unattended screens**: displays keep their last content when the
   network drops, reconnect by themselves, and can dim at night.
 - **Read-only by design**: displays take no input. One password protects the

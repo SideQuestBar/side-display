@@ -1,5 +1,5 @@
 /**
- * Reads and writes layouts and displays, and keeps the bookkeeping the live
+ * Reads and writes layouts, playlists and displays, and keeps the bookkeeping the live
  * streams need: which displays show which layout, and which Home Assistant
  * entities each display depends on.
  */
@@ -15,7 +15,7 @@ import {
 	normalizeSlug,
 	walk,
 } from "../shared/layout";
-import type { AnyEl, Display, Layout, ViewPayload } from "../shared/types";
+import type { AnyEl, Display, Layout, Playlist, ViewPayload } from "../shared/types";
 import { config } from "./config";
 import { db, schema } from "./db";
 import { connectedDisplayIds, notify, onlineCount } from "./events";
@@ -23,6 +23,7 @@ import { getSetting, setSetting } from "./settings";
 
 type LayoutRow = typeof schema.layouts.$inferSelect;
 type DisplayRow = typeof schema.displays.$inferSelect;
+type PlaylistRow = typeof schema.playlists.$inferSelect;
 
 // Stored JSON is normalised on the way out too, so layouts saved by an older
 // version gain the defaults of properties added since.
@@ -42,12 +43,21 @@ const toDisplay = (row: DisplayRow): Display => ({
 	name: row.name,
 	slug: row.slug ?? "",
 	playlist: normalizePlaylist(row.playlist),
+	playlistId: row.playlistId ?? "",
 	settings: normalizeDisplaySettings(row.settings),
 	archivedAt: row.archivedAt,
 	createdAt: row.createdAt,
 	updatedAt: row.updatedAt,
 	lastSeenAt: row.lastSeenAt,
 	online: onlineCount(row.id),
+});
+
+const toPlaylist = (row: PlaylistRow): Playlist => ({
+	id: row.id,
+	name: row.name,
+	entries: normalizePlaylist(row.entries),
+	createdAt: row.createdAt,
+	updatedAt: row.updatedAt,
 });
 
 // ------------------------------------------------------------------ layouts
@@ -116,7 +126,16 @@ export function updateLayout(id: string, input: LayoutInput): Layout | null {
 
 export function deleteLayout(id: string): boolean {
 	const affected = displaysUsing(id);
-	// Drop the layout from every playlist it was part of.
+	// Drop the layout from every list it was part of: the playlists, and the displays' own.
+	for (const row of db.select().from(schema.playlists).all()) {
+		const entries = normalizePlaylist(row.entries);
+		if (entries.some((e) => e.layoutId === id)) {
+			db.update(schema.playlists)
+				.set({ entries: entries.filter((e) => e.layoutId !== id) })
+				.where(eq(schema.playlists.id, row.id))
+				.run();
+		}
+	}
 	for (const row of db.select().from(schema.displays).all()) {
 		const playlist = normalizePlaylist(row.playlist);
 		if (playlist.some((e) => e.layoutId === id)) {
@@ -176,6 +195,62 @@ export function deleteFolder(name: string) {
 	refile(name, "");
 }
 
+// ---------------------------------------------------------------- playlists
+
+export const listPlaylists = (): Playlist[] =>
+	db
+		.select()
+		.from(schema.playlists)
+		.all()
+		.map(toPlaylist)
+		.sort((a, b) => a.name.localeCompare(b.name));
+
+export function getPlaylist(id: string): Playlist | null {
+	const row = db.select().from(schema.playlists).where(eq(schema.playlists.id, id)).get();
+	return row ? toPlaylist(row) : null;
+}
+
+export interface PlaylistInput {
+	name?: string;
+	entries?: unknown;
+}
+
+export function createPlaylist(input: PlaylistInput): Playlist {
+	const id = newId();
+	db.insert(schema.playlists)
+		.values({ id, name: input.name?.trim() || "New playlist", entries: normalizePlaylist(input.entries) })
+		.run();
+	return getPlaylist(id)!;
+}
+
+export function updatePlaylist(id: string, input: PlaylistInput): Playlist | null {
+	const current = getPlaylist(id);
+	if (!current) return null;
+	db.update(schema.playlists)
+		.set({
+			name: input.name?.trim() || current.name,
+			entries: input.entries === undefined ? current.entries : normalizePlaylist(input.entries),
+		})
+		.where(eq(schema.playlists.id, id))
+		.run();
+	invalidate();
+	if (input.entries !== undefined) notify({ event: "update", data: null }, displaysFollowing(id));
+	return getPlaylist(id);
+}
+
+/** Deletes a playlist. The displays that followed it keep its layouts, as their own, so no screen goes blank. */
+export function deletePlaylist(id: string): boolean {
+	const playlist = getPlaylist(id);
+	if (!playlist) return false;
+	db.update(schema.displays)
+		.set({ playlist: playlist.entries, playlistId: null })
+		.where(eq(schema.displays.playlistId, id))
+		.run();
+	db.delete(schema.playlists).where(eq(schema.playlists.id, id)).run();
+	invalidate();
+	return true;
+}
+
 // ----------------------------------------------------------------- displays
 
 export const listDisplays = (): Display[] =>
@@ -195,9 +270,14 @@ export interface DisplayInput {
 	name?: string;
 	slug?: string;
 	playlist?: unknown;
+	/** The playlist to follow; empty or null goes back to the display's own layouts. */
+	playlistId?: string | null;
 	settings?: unknown;
 	archived?: boolean;
 }
+
+/** The playlist id to store for a display: null for none, and for one that does not exist. */
+const knownPlaylist = (id: string | null | undefined): string | null => (id && getPlaylist(id) ? id : null);
 
 /** A short address that another display already answers to. */
 export class SlugTaken extends Error {
@@ -232,6 +312,7 @@ export function createDisplay(input: DisplayInput): Display {
 			name: input.name?.trim() || "New display",
 			slug: freeSlug(input.slug, id),
 			playlist: normalizePlaylist(input.playlist),
+			playlistId: knownPlaylist(input.playlistId),
 			settings: normalizeDisplaySettings(input.settings),
 			archivedAt: archiveDate(input.archived, null),
 		})
@@ -248,6 +329,7 @@ export function updateDisplay(id: string, input: DisplayInput): Display | null {
 			name: input.name?.trim() || current.name,
 			slug: input.slug === undefined ? current.slug || null : freeSlug(input.slug, id),
 			playlist: input.playlist === undefined ? current.playlist : normalizePlaylist(input.playlist),
+			playlistId: knownPlaylist(input.playlistId === undefined ? current.playlistId : input.playlistId),
 			settings: input.settings === undefined ? current.settings : normalizeDisplaySettings(input.settings),
 			archivedAt: archiveDate(input.archived, current.archivedAt),
 		})
@@ -283,6 +365,8 @@ interface View {
 	elements: Map<string, AnyEl>;
 	entities: Set<string>;
 	layoutIds: Set<string>;
+	/** The playlist the display follows, if any. */
+	playlistId: string;
 }
 
 // What each display shows, built on demand and dropped on any write: screens
@@ -343,7 +427,8 @@ function buildView(displayId: string): View | null {
 	const entities = new Set<string>();
 	const layoutIds = new Set<string>();
 	const entries: ViewPayload["entries"] = [];
-	for (const entry of display.playlist) {
+	const playlist = display.playlistId ? getPlaylist(display.playlistId) : null;
+	for (const entry of playlist?.entries ?? display.playlist) {
 		const layout = getLayout(entry.layoutId);
 		if (!layout) continue;
 		layoutIds.add(layout.id);
@@ -369,6 +454,7 @@ function buildView(displayId: string): View | null {
 		elements,
 		entities,
 		layoutIds,
+		playlistId: playlist?.id ?? "",
 	};
 }
 
@@ -378,6 +464,10 @@ export const viewElement = (displayKey: string, elementId: string) => view(displ
 
 function displaysUsing(layoutId: string): string[] {
 	return [...connectedDisplayIds()].filter((id) => view(id)?.layoutIds.has(layoutId));
+}
+
+function displaysFollowing(playlistId: string): string[] {
+	return [...connectedDisplayIds()].filter((id) => view(id)?.playlistId === playlistId);
 }
 
 /** Tells connected screens which of the entities they use just changed. */
