@@ -17,10 +17,11 @@ layout and every screen showing it updates within a second.
 
 ## What it does
 
-- **58 elements**: text, images, galleries, slideshows, video (files and
-  YouTube), web pages, QR codes, tickers, lists, stickers, clocks, dates,
-  countdowns, calendars (iCal and Home Assistant), opening hours, weather,
-  MapLibre maps, news feeds, eight Home Assistant elements and two for MQTT.
+- **59 elements**: text, images, galleries, slideshows, video (files and
+  YouTube), Twitch streams, web pages, QR codes, tickers, lists, stickers,
+  clocks, dates, countdowns, calendars (iCal and Home Assistant), opening
+  hours, weather, MapLibre maps, news feeds, eight Home Assistant elements and
+  two for MQTT.
   [Full reference](docs/elements.md).
 - **A layout system with freedom where you want it**: elements stack and sit
   in columns by default; switch any of them to _free_ and drag it anywhere,

@@ -12,6 +12,7 @@ import { Elysia, sse, t } from "elysia";
 import { config } from "../config";
 import { elementPicture, resolveElement } from "../data";
 import { cameraStream } from "../data/home";
+import { twitchPlaylist } from "../data/streams";
 import { createQueue, type StreamEvent, subscribe } from "../events";
 import { serveMedia } from "../media";
 import { touchDisplay, viewElement, viewPayload } from "../store";
@@ -54,6 +55,19 @@ export const viewRoutes = new Elysia({ name: "routes.view" })
 			const element = viewElement(params.id, params.element);
 			const entity = element?.type === "ha-stream" ? String(element.entity ?? "") : "";
 			return (await cameraStream(entity, request.signal)) ?? status(404, notFound);
+		},
+	)
+	/** The playlist of a Twitch element in direct mode; the channel is the element's, never the request's. */
+	.get(
+		"/api/view/:id/hls/:element",
+		{ params: t.Object({ id: t.String(), element: t.String() }) },
+		async ({ params, status }) => {
+			const element = viewElement(params.id, params.element);
+			const playlist =
+				element?.type === "twitch" && element.mode === "direct"
+					? await twitchPlaylist(String(element.channel ?? ""), String(element.quality ?? ""))
+					: null;
+			return playlist ?? status(404, notFound);
 		},
 	)
 	.get(

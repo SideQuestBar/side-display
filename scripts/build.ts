@@ -48,6 +48,9 @@ export async function build(dev = false): Promise<boolean> {
 	for (const folder of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
 		await cp(join(pdfjs, folder), join(out, "vendor/pdfjs", folder), { recursive: true });
 	}
+	// And hls.js, by Twitch elements playing the stream directly.
+	await mkdir(join(out, "vendor/hls"), { recursive: true });
+	await cp(join(root, "node_modules/hls.js/dist/hls.light.min.mjs"), join(out, "vendor/hls/hls.light.min.mjs"));
 	await cp(join(root, "src/client/favicon.svg"), join(out, "favicon.svg"));
 	console.log(`client built in ${Math.round(performance.now() - started)} ms → dist/client`);
 	return true;

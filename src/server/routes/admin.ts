@@ -8,6 +8,7 @@ import { DEFAULT_GENERAL_SETTINGS, type GeneralSettings, type SetupInfo } from "
 import { isOwner } from "../auth";
 import { elementPicture, resolveElement } from "../data";
 import { cameraStream } from "../data/home";
+import { twitchPlaylist } from "../data/streams";
 import { notify } from "../events";
 import { connection, haStatus, listEntities, startHa, testConnection } from "../ha/client";
 import { deleteMedia, listMedia, moveMedia, saveUpload, UploadError, updateMedia } from "../media";
@@ -294,6 +295,12 @@ const settingsRoutes = new Elysia()
 		"/preview/live",
 		{ query: t.Object({ entity: t.String({ maxLength: 255 }) }) },
 		async ({ query, request, status }) => (await cameraStream(query.entity, request.signal)) ?? status(404, notFound),
+	)
+	/** A Twitch channel's playlist for the editor preview; a GET, so a player can keep asking for it. */
+	.get(
+		"/preview/hls",
+		{ query: t.Object({ channel: t.String({ maxLength: 120 }), quality: t.Optional(t.String({ maxLength: 8 })) }) },
+		async ({ query, status }) => (await twitchPlaylist(query.channel, query.quality ?? "")) ?? status(404, notFound),
 	);
 
 export const adminRoutes = new Elysia({ name: "routes.admin", prefix: "/api" })

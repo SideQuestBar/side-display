@@ -1,13 +1,15 @@
+import type Hls from "hls.js";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, Show } from "solid-js";
 import { encode } from "uqr";
-import type { FeedData, GalleryData, TextData, TickerData, VideoData, WebData } from "../../../shared/data";
+import type { FeedData, GalleryData, TextData, TickerData, TwitchData, VideoData, WebData } from "../../../shared/data";
 import type { El } from "../../../shared/elements";
 import { renderMarkdown } from "../../../shared/markdown";
 import { fillPlaceholders, hasClockPlaceholder } from "../../../shared/placeholders";
 import { timeFormatter } from "../../../shared/time";
+import { twitchAllows, twitchChannel } from "../../../shared/twitch";
 import type { AnyEl } from "../../../shared/types";
-import { mediaUrl } from "../../lib/api";
-import { px, useDisplay, useMinute, useSlide } from "../context";
+import { mediaUrl, url } from "../../lib/api";
+import { type LayoutEnv, px, useDisplay, useMinute, useSlide } from "../context";
 import { Placeholder, type RendererProps } from "../ElementBox";
 import { Picture } from "../Picture";
 
@@ -616,6 +618,182 @@ export function Video(props: RendererProps<El<"video">, VideoData>) {
 					</Show>
 					<Show when={env.editing && props.error()}>
 						<div class="sd-video-note">{props.error()}</div>
+					</Show>
+				</Show>
+			</Show>
+		</div>
+	);
+}
+
+/** The host names Twitch must be told about: this page's and, when it is framed itself (Home Assistant), its ancestors'. */
+function twitchParents(): string {
+	const hosts = new Set([location.hostname]);
+	for (const origin of Array.from(location.ancestorOrigins ?? [])) {
+		try {
+			hosts.add(new URL(origin).hostname);
+		} catch {
+			// An opaque origin has no host name to give.
+		}
+	}
+	return [...hosts].map((host) => `parent=${encodeURIComponent(host)}`).join("&");
+}
+
+let hlsLibrary: Promise<typeof Hls> | undefined;
+/** hls.js is only needed by direct Twitch streams, so like MapLibre it is fetched from `vendor/` when one is shown. */
+function loadHls(): Promise<typeof Hls> {
+	hlsLibrary ??= (async () => {
+		// A computed specifier keeps the bundler from following the import.
+		const specifier = url("vendor/hls/hls.light.min.mjs");
+		return ((await import(specifier)) as { default: typeof Hls }).default;
+	})();
+	hlsLibrary.catch(() => {
+		hlsLibrary = undefined;
+	});
+	return hlsLibrary;
+}
+
+/**
+ * Where the server relays a channel's playlist, worked out from where the
+ * element's picture would be: a display addresses it by display and element
+ * id, the editor (which has no picture for it) by the channel.
+ */
+async function twitchPlaylistAddress(env: LayoutEnv, el: El<"twitch">, channel: string): Promise<string> {
+	const picture = await env.pictureUrl(el as unknown as AnyEl).catch(() => "");
+	const view = /^(.*\/api\/view\/[^/]+)\/picture\/([^/?#]+)/.exec(picture);
+	if (view) return `${view[1]}/hls/${view[2]}`;
+	return url(`api/preview/hls?channel=${channel}&quality=${encodeURIComponent(el.quality)}`);
+}
+
+/** How long after a stream broke off it is opened again. */
+const TWITCH_RETRY_MS = 10_000;
+
+/** The stream itself in a plain video player, without Twitch's. */
+function TwitchDirect(props: { el: El<"twitch">; channel: string; width: number }) {
+	const env = useDisplay();
+	let video!: HTMLVideoElement;
+	const [attempt, setAttempt] = createSignal(0);
+	let retry = () => {};
+
+	createEffect(() => {
+		attempt();
+		const channel = props.channel;
+		// Read here so a change of quality opens the stream anew.
+		void props.el.quality;
+		let cancelled = false;
+		let player: Hls | undefined;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		retry = () => {
+			if (cancelled) return;
+			player?.destroy();
+			player = undefined;
+			timer ??= setTimeout(() => setAttempt((n) => n + 1), TWITCH_RETRY_MS);
+		};
+		void (async () => {
+			const address = await twitchPlaylistAddress(env, props.el, channel);
+			const library = await loadHls().catch(() => undefined);
+			if (cancelled) return;
+			if (library?.isSupported()) {
+				player = new library();
+				player.on(library.Events.ERROR, (_, data) => {
+					if (data.fatal) retry();
+				});
+				player.on(library.Events.MANIFEST_PARSED, () => void video.play().catch(() => {}));
+				player.loadSource(address);
+				player.attachMedia(video);
+			}
+			// Without Media Source Extensions (an iPhone) the browser plays such streams itself.
+			else video.src = address;
+		})();
+		onCleanup(() => {
+			cancelled = true;
+			clearTimeout(timer);
+			player?.destroy();
+			video.removeAttribute("src");
+			video.load();
+		});
+	});
+
+	return (
+		<video
+			ref={video}
+			autoplay
+			playsinline
+			muted={props.el.muted}
+			onError={() => retry()}
+			onEnded={() => retry()}
+			style={{ width: `${props.width}%`, "object-fit": props.el.fit }}
+		/>
+	);
+}
+
+export function Twitch(props: RendererProps<El<"twitch">, TwitchData>) {
+	const env = useDisplay();
+	const slide = useSlide();
+	const onScreen = () => slide?.active() ?? true;
+	const channel = () => twitchChannel(props.el.channel);
+	const direct = () => props.el.mode === "direct";
+	// Whether Twitch's own pages (its player, its chat) may be framed by this one.
+	const framable = twitchAllows(location.protocol, location.hostname);
+	const chat = () => (props.el.chat && framable ? Math.min(50, Math.max(15, props.el.chatWidth)) : 0);
+	// Only a definite "offline" takes the stream away: when the check fails, it is tried anyway.
+	// Twitch's player has an offline page of its own, shown unless there is an image to show instead.
+	const offline = () => props.data()?.live === false && (direct() || Boolean(props.el.poster));
+	const poster = () => <Picture src={mediaUrl(props.el.poster, 1920)} fit="cover" />;
+
+	return (
+		<div class="sd-twitch sd-media-frame">
+			<Show when={channel()} fallback={<Placeholder text="Enter a Twitch channel" />}>
+				<Show
+					when={!env.lowColor()}
+					// ePaper cannot play a stream: show the image instead.
+					fallback={
+						<Show when={props.el.poster} fallback={<Placeholder text="Twitch (not shown on ePaper)" />}>
+							{poster()}
+						</Show>
+					}
+				>
+					<Show
+						when={direct() || framable}
+						// Said on the screen too: Twitch's own refusal is an empty frame.
+						fallback={
+							<Placeholder
+								text=""
+								error="Twitch's player only works on a page opened over HTTPS with a host name, or on localhost. The element's direct stream plays anywhere."
+							/>
+						}
+					>
+						<Show
+							when={!offline()}
+							fallback={
+								<Show when={props.el.poster} fallback={<Placeholder text="The channel is offline" />}>
+									{poster()}
+								</Show>
+							}
+						>
+							{/* Neither player can be paused from here: they only exist while on screen. */}
+							<Show when={onScreen()}>
+								<Show
+									when={direct()}
+									fallback={
+										<iframe
+											title="Twitch stream"
+											allow="autoplay; encrypted-media; fullscreen"
+											style={{ width: `${100 - chat()}%` }}
+											src={`https://player.twitch.tv/?channel=${channel()}&${twitchParents()}&autoplay=true&muted=${props.el.muted}`}
+										/>
+									}
+								>
+									<TwitchDirect el={props.el} channel={channel()} width={100 - chat()} />
+								</Show>
+								<Show when={chat() > 0}>
+									<iframe
+										title="Twitch chat"
+										style={{ left: `${100 - chat()}%`, width: `${chat()}%` }}
+										src={`https://www.twitch.tv/embed/${channel()}/chat?${twitchParents()}&darkpopout`}
+									/>
+								</Show>
+							</Show>
+						</Show>
 					</Show>
 				</Show>
 			</Show>

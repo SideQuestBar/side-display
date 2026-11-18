@@ -41,6 +41,7 @@ import {
 	zoned,
 	zonedInstant,
 } from "../src/shared/time";
+import { twitchAllows, twitchChannel } from "../src/shared/twitch";
 import { type AnyEl, ELEMENT_COMMON_DEFAULTS } from "../src/shared/types";
 
 describe("elements", () => {
@@ -597,5 +598,19 @@ describe("time elements", () => {
 		// A crescent's terminator curves back on the lit side, a gibbous one bulges away from it.
 		expect(moonPath(0.2, 10)).toEndWith("0 0 0 0 -10Z");
 		expect(moonPath(0.4, 10)).toEndWith("0 0 1 0 -10Z");
+	});
+
+	test("twitch: channels from names and addresses, and where the player may be embedded", () => {
+		expect(twitchChannel(" SomeChannel ")).toBe("somechannel");
+		expect(twitchChannel("https://www.twitch.tv/Some_Channel?referrer=raid")).toBe("some_channel");
+		expect(twitchChannel("twitch.tv/somechannel/")).toBe("somechannel");
+		expect(twitchChannel("https://www.twitch.tv/videos/123456")).toBe("");
+		expect(twitchChannel("https://example.com/somechannel")).toBe("");
+		expect(twitchChannel("")).toBe("");
+		expect(twitchAllows("http:", "localhost")).toBe(true);
+		expect(twitchAllows("https:", "display.example.org")).toBe(true);
+		expect(twitchAllows("http:", "display.example.org")).toBe(false);
+		expect(twitchAllows("https:", "192.168.1.20")).toBe(false);
+		expect(twitchAllows("https:", "[fd00::1]")).toBe(false);
 	});
 });

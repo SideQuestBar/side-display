@@ -15,7 +15,7 @@ import { chart, jsonValue, sports, stocks, transit, uptime } from "./feeds";
 import { alertsData, cameraSnapshot, energyData, entityData, graphData, presenceData, presencePicture } from "./home";
 import { galleryPhotos, textStates } from "./pictures";
 import { cached } from "./sources";
-import { rssData, tickerData, videoData, webData, webPicture } from "./streams";
+import { rssData, tickerData, twitchData, videoData, webData, webPicture } from "./streams";
 import { birthdaysData, calendarData, hoursData } from "./time";
 import { airQuality, map, weather } from "./weather";
 
@@ -70,6 +70,7 @@ const resolvers: { [K in ElementType]?: Resolver<K> } = {
 	ticker: tickerData,
 	social: socialPosts,
 	video: videoData,
+	twitch: twitchData,
 	web: webData,
 
 	"ha-entity": entityData,

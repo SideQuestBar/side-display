@@ -32,5 +32,5 @@ Bun + Elysia 2 server, SolidJS client, Drizzle 1.0 on SQLite, Biome.
 - **Containers** (`columns`, `grid`, `carousel`, `switch`) keep their children under the keys in `CHILD_KEY` (`src/shared/layout.ts`); `canHold()` says what may nest in what. No element may name a property after a common one (a test checks).
 - **Elements are data-driven.** `src/shared/elements.ts` is the single source for defaults, editor fields and the docs. Stored layouts are normalised on read (`normalizeElements`), so adding a property needs no migration.
 - **ePaper modes**: user-chosen colours go through `env.ink()`, pictures through `<Picture>`, and anything animated must have a static form when `env.lowColor()` is true.
-- **MapLibre is not bundled**; it is copied to `dist/client/vendor/maplibre` and imported at runtime by the map element.
+- **MapLibre is not bundled**; it is copied to `dist/client/vendor/maplibre` and imported at runtime by the map element. pdf.js and hls.js are vendored the same way.
 - `pkill -f` patterns that match your own command line kill your shell; stop background servers in a separate command.

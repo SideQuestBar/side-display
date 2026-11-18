@@ -1,10 +1,11 @@
 /**
- * Server-side data of the video, web page, ticker and news feed elements:
- * subtitles fetched for the browser, screenshots of web pages, and feeds
+ * Server-side data of the video, Twitch, web page, ticker and news feed elements:
+ * subtitles fetched for the browser, whether a channel is live, screenshots of web pages, and feeds
  * merged and filtered.
  */
-import type { FeedData, FeedItem, TickerData, VideoData, WebData } from "../../shared/data";
+import type { FeedData, FeedItem, TickerData, TwitchData, VideoData, WebData } from "../../shared/data";
 import type { El } from "../../shared/elements";
+import { twitchChannel } from "../../shared/twitch";
 import type { AnyEl } from "../../shared/types";
 import { cached, feed, fetchText } from "./sources";
 
@@ -29,6 +30,142 @@ export async function videoData(el: El<"video">): Promise<VideoData | null> {
 		throw new Error("the subtitles are not a WebVTT (.vtt) or SubRip (.srt) file");
 	});
 	return { subtitles: text };
+}
+
+// ------------------------------------------------------------------ twitch
+
+/**
+ * Whether a channel is live, for the element's offline image. Twitch's API
+ * needs an application key; its preview picture does not, and only exists
+ * while the channel streams: otherwise the address redirects to a stock image.
+ */
+export async function twitchData(el: El<"twitch">): Promise<TwitchData | null> {
+	const channel = twitchChannel(el.channel);
+	// Twitch's player says "offline" itself: without an image to show instead, nothing depends on the answer.
+	if (!channel || (!el.poster && el.mode !== "direct")) return null;
+	const live = await cached(`twitch:${channel}`, 45, async () => {
+		const response = await fetch(`https://static-cdn.jtvnw.net/previews-ttv/live_user_${channel}-440x248.jpg`, {
+			method: "HEAD",
+			redirect: "manual",
+			headers: { "user-agent": "SideDisplay" },
+			signal: AbortSignal.timeout(10_000),
+		});
+		if (response.status === 200) return true;
+		if (response.status >= 300 && response.status < 400) return false;
+		throw new Error(`Twitch answered ${response.status}`);
+	});
+	return { live };
+}
+
+/** The id Twitch's own web player presents; anonymous viewers are let in under it. */
+const TWITCH_CLIENT = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+const TWITCH_TOKEN_QUERY = "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9";
+const twitchFetch = (url: string, init: RequestInit = {}) =>
+	fetch(url, { ...init, signal: AbortSignal.timeout(10_000) });
+
+/**
+ * The address of one rendition in a channel's master playlist: the best one
+ * no taller than `maxHeight` (0 = the best there is), else the smallest.
+ * Audio-only renditions have no resolution and are passed over.
+ */
+export function pickVariant(master: string, maxHeight: number): string | null {
+	const variants: { height: number; url: string }[] = [];
+	const lines = master.split(/\r?\n/);
+	for (let i = 0; i < lines.length - 1; i++) {
+		const height = /^#EXT-X-STREAM-INF:.*RESOLUTION=\d+x(\d+)/.exec(lines[i]!)?.[1];
+		const url = lines[i + 1]!.trim();
+		if (height && /^https:\/\//.test(url)) variants.push({ height: Number(height), url });
+	}
+	variants.sort((a, b) => b.height - a.height);
+	return (variants.find((v) => maxHeight <= 0 || v.height <= maxHeight) ?? variants.at(-1))?.url ?? null;
+}
+
+/**
+ * Opens a viewing session the way Twitch's web player does, without the
+ * player: an anonymous playback token, then the channel's master playlist.
+ * Returns the playlist of one rendition, or null when the channel is offline
+ * or does not exist. None of this is a documented interface.
+ */
+async function twitchVariant(channel: string, maxHeight: number): Promise<string | null> {
+	const granted = await twitchFetch("https://gql.twitch.tv/gql", {
+		method: "POST",
+		headers: { "client-id": TWITCH_CLIENT, "content-type": "application/json" },
+		body: JSON.stringify({
+			operationName: "PlaybackAccessToken",
+			extensions: { persistedQuery: { version: 1, sha256Hash: TWITCH_TOKEN_QUERY } },
+			variables: { isLive: true, login: channel, isVod: false, vodID: "", playerType: "embed", platform: "web" },
+		}),
+	});
+	if (!granted.ok) throw new Error(`Twitch answered ${granted.status}`);
+	const token = (
+		(await granted.json()) as { data?: { streamPlaybackAccessToken?: { value: string; signature: string } } }
+	).data?.streamPlaybackAccessToken;
+	if (!token) return null;
+	const master = new URL(`https://usher.ttvnw.net/api/channel/hls/${channel}.m3u8`);
+	master.search = new URLSearchParams({
+		sig: token.signature,
+		token: token.value,
+		allow_source: "true",
+		player: "twitchweb",
+		p: String(Math.floor(Math.random() * 1e7)),
+	}).toString();
+	const response = await twitchFetch(master.href);
+	// Twitch has no playlist for a channel that is not streaming.
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`Twitch answered ${response.status}`);
+	return pickVariant(await response.text(), maxHeight);
+}
+
+interface TwitchSession {
+	variant: Promise<string | null>;
+	/** When to ask again: soon after "offline" or a failure, never while a session plays. */
+	until: number;
+	playlist?: { at: number; text: Promise<string | null> };
+}
+const twitchSessions = new Map<string, TwitchSession>();
+
+/**
+ * The current playlist of a channel's stream, for the element's direct mode.
+ * It is relayed because Twitch refuses to give it to a page of another site;
+ * the video it lists is then fetched by the screen itself, straight from
+ * Twitch. All screens showing a channel share one session, and a playlist
+ * fetched within the last second.
+ */
+export async function twitchPlaylist(channelInput: string, quality: string): Promise<Response | null> {
+	const channel = twitchChannel(channelInput);
+	if (!channel) return null;
+	const maxHeight = Number.parseInt(quality, 10) || 0;
+	const key = `${channel}:${maxHeight}`;
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const now = Date.now();
+		let session = twitchSessions.get(key);
+		if (!session || session.until < now) {
+			if (twitchSessions.size > 200) for (const [k, s] of twitchSessions) if (s.until < now) twitchSessions.delete(k);
+			const opened: TwitchSession = { variant: twitchVariant(channel, maxHeight), until: Number.POSITIVE_INFINITY };
+			const expire = () => {
+				opened.until = Date.now() + 30_000;
+			};
+			opened.variant.then((variant) => variant || expire(), expire);
+			twitchSessions.set(key, opened);
+			session = opened;
+		}
+		const variant = await session.variant.catch(() => null);
+		if (!variant) return null;
+		if (!session.playlist || now - session.playlist.at > 1000) {
+			session.playlist = {
+				at: now,
+				text: twitchFetch(variant).then((response) => (response.ok ? response.text() : null)),
+			};
+		}
+		const text = await session.playlist.text.catch(() => null);
+		if (text)
+			return new Response(text, {
+				headers: { "content-type": "application/vnd.apple.mpegurl", "cache-control": "no-store" },
+			});
+		// The session is over (the stream restarted, or Twitch closed it): open another, once.
+		if (twitchSessions.get(key) === session) twitchSessions.delete(key);
+	}
+	return null;
 }
 
 // ---------------------------------------------------------------- web page

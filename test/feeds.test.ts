@@ -27,6 +27,7 @@ import {
 	tableFromJson,
 	toNumber,
 } from "../src/server/data/feeds";
+import { pickVariant } from "../src/server/data/streams";
 import type { SportsEvent } from "../src/shared/data";
 
 describe("departures", () => {
@@ -535,5 +536,26 @@ describe("chart data", () => {
 			labels: ["1", "2"],
 			series: [{ name: "n", values: [5, 6] }],
 		});
+	});
+
+	test("twitch: the rendition picked from a master playlist", () => {
+		const master = [
+			"#EXTM3U",
+			'#EXT-X-STREAM-INF:BANDWIDTH=6674066,RESOLUTION=1920x1080,CODECS="avc1.640028,mp4a.40.2",VIDEO="chunked"',
+			"https://playlist.example/1080",
+			'#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="720p30",NAME="720p",AUTOSELECT=YES,DEFAULT=YES',
+			'#EXT-X-STREAM-INF:BANDWIDTH=2373000,RESOLUTION=1280x720,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="720p30"',
+			"https://playlist.example/720",
+			'#EXT-X-STREAM-INF:BANDWIDTH=630000,RESOLUTION=640x360,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="360p30"',
+			"https://playlist.example/360",
+			'#EXT-X-STREAM-INF:BANDWIDTH=160000,CODECS="mp4a.40.2",VIDEO="audio_only"',
+			"https://playlist.example/audio",
+		].join("\n");
+		expect(pickVariant(master, 0)).toBe("https://playlist.example/1080");
+		expect(pickVariant(master, 720)).toBe("https://playlist.example/720");
+		expect(pickVariant(master, 480)).toBe("https://playlist.example/360");
+		// Nothing that small: the smallest picture, never the sound alone.
+		expect(pickVariant(master, 160)).toBe("https://playlist.example/360");
+		expect(pickVariant("#EXTM3U", 0)).toBeNull();
 	});
 });

@@ -242,6 +242,10 @@ export interface VideoData {
 	/** The subtitles as WebVTT text. */
 	subtitles: string;
 }
+export interface TwitchData {
+	/** Whether the channel is streaming right now. */
+	live: boolean;
+}
 export interface WebData {
 	/** Screenshot mode: when the current picture of the page was taken. */
 	shot: number;

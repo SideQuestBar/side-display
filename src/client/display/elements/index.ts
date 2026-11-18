@@ -1,7 +1,7 @@
 import type { Component } from "solid-js";
 import type { ElementType } from "../../../shared/elements";
 import { Banner, Menu, Pdf, Shape, Social, Wifi } from "./boards";
-import { Gallery, Image, List, Qr, Rss, Slideshow, Sticker, Text, Ticker, Video, Web } from "./content";
+import { Gallery, Image, List, Qr, Rss, Slideshow, Sticker, Text, Ticker, Twitch, Video, Web } from "./content";
 import { Chart, JsonValue, Sports, Stocks, Transit, Uptime } from "./feeds";
 import { HaCamera, HaEntities, HaEntity, HaGauge, HaGraph, HaMedia, HaTemplate, HaTodo } from "./ha";
 import { HaAlerts, HaClimate, HaEnergy, HaPresence, HaStream } from "./ha-extra";
@@ -19,6 +19,7 @@ export const renderers: Record<ElementType, Component<any>> = {
 	gallery: Gallery,
 	slideshow: Slideshow,
 	video: Video,
+	twitch: Twitch,
 	web: Web,
 	qr: Qr,
 	ticker: Ticker,

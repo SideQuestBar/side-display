@@ -38,6 +38,7 @@
 		"babel-preset-solid": "1.9.19",
 		"bun-plugin-tailwind": "0.1.2",
 		"drizzle-kit": "1.0.0-rc.5",
+		"hls.js": "1.7.4",
 		"lucide-solid": "^1.73.0",
 		"maplibre-gl": "6.18.0",
 		"pdfjs-dist": "6.5.438",
