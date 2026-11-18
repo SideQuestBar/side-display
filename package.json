@@ -1,6 +1,6 @@
 {
 	"name": "side-display",
-	"version": "1.1.0",
+	"version": "1.2.0",
 	"description": "Self-hosted manager for read-only information displays: TVs, tablets and ePaper screens.",
 	"license": "GPL-3.0-or-later",
 	"repository": {

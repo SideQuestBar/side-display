@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.2.0
 
 - New **Playlists** page: a named list of layouts, with the same durations and
   schedules as before, that any number of displays can show. A display shows
